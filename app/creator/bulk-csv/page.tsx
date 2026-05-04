@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import { ArrowLeft, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle, Youtube } from "lucide-react";
@@ -86,20 +86,15 @@ async function runPool(size: number, total: number, worker: (i: number) => Promi
 
 export default function BulkCsvPage() {
   const [rows, setRows] = useState<QueueItem[]>([]);
-  const [workersReady, setWorkersReady] = useState(false);
   const [running, setRunning] = useState(false);
+  const [prepNote, setPrepNote] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    initAudioWorkers()
-      .then(() => setWorkersReady(true))
-      .catch(() => setWorkersReady(true));
-  }, []);
 
   const onFile = useCallback((file: File) => {
     Papa.parse<Record<string, string>>(file, {
       header: true,
       skipEmptyLines: true,
+      delimiter: "",
       complete: (res) => {
         const out: QueueItem[] = [];
         for (const rec of res.data) {
@@ -117,11 +112,27 @@ export default function BulkCsvPage() {
   };
 
   const processAll = async () => {
+    setPrepNote(null);
     const snapshot = rows;
     const pendingIdx = snapshot
       .map((r, i) => i)
       .filter((i) => snapshot[i].status === "pending");
-    if (!pendingIdx.length || !workersReady) return;
+    if (!pendingIdx.length) return;
+
+    const needsMl = pendingIdx.some((i) => classifyTrackUrl(snapshot[i].trackUrl) === "audio");
+    if (needsMl) {
+      setPrepNote("Loading ML models for direct-audio rows (first time can take 1–3 minutes)…");
+      try {
+        await initAudioWorkers();
+      } catch (e) {
+        setPrepNote(
+          e instanceof Error ? e.message : "Failed to load audio workers. Check the browser console."
+        );
+        return;
+      }
+      setPrepNote(null);
+    }
+
     setRunning(true);
 
     await runPool(4, pendingIdx.length, async (k) => {
@@ -245,11 +256,17 @@ export default function BulkCsvPage() {
             Choose CSV
           </button>
 
-          {!workersReady && (
+          {prepNote && (
             <p className="mt-3 flex items-center gap-2 text-sm text-amber-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading audio workers…
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              {prepNote}
             </p>
           )}
+
+          <p className="mt-3 text-xs text-slate-500">
+            You can pick a CSV anytime. ML models load only when you process rows with{" "}
+            <strong className="text-slate-400">direct audio</strong> URLs (not YouTube).
+          </p>
 
           {rows.length > 0 && (
             <div className="mt-6 space-y-3">
@@ -268,7 +285,7 @@ export default function BulkCsvPage() {
               </div>
               <button
                 type="button"
-                disabled={running || !workersReady || pending === 0}
+                disabled={running || pending === 0}
                 onClick={() => void processAll()}
                 className="rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40"
               >

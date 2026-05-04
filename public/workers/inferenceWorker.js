@@ -77,7 +77,10 @@ async function runAll(features) {
 }
 
 self.onmessage = function (msg) {
-    if (msg.data.init)     init();
-    else if (msg.data.features && ready) runAll(msg.data.features);
+    if (msg.data.init) {
+        init().catch(function (err) {
+            self.postMessage({ error: String(err && err.message ? err.message : err) });
+        });
+    } else if (msg.data.features && ready) runAll(msg.data.features);
     else if (msg.data.features && !ready) self.postMessage({ error: 'Worker not ready yet' });
 };

@@ -102,49 +102,133 @@ function loadScript(src: string): Promise<void> {
 }
 
 let _ess: any = null;
+/** Single-flight Essentia init (bulk CSV runs several decodes in parallel). */
+let _essLoadPromise: Promise<any> | null = null;
+
+async function resolveEssentiaWasmModule(): Promise<any> {
+  const w = window as unknown as { EssentiaWASM?: unknown };
+  const raw = w.EssentiaWASM;
+  if (raw == null) {
+    throw new Error('EssentiaWASM missing after loading essentia-wasm.web.js');
+  }
+  let mod: any =
+    typeof raw === 'function' ? await (raw as () => unknown)() : await Promise.resolve(raw);
+  if (mod != null && typeof (mod as Promise<unknown>).then === 'function') {
+    mod = await mod;
+  }
+  if (mod == null || typeof mod.EssentiaJS !== 'function') {
+    throw new Error('Essentia WASM module did not expose EssentiaJS');
+  }
+  return mod;
+}
+
 async function getEssentia() {
   if (_ess) return _ess;
-  await loadScript('/essentia-wasm.web.js');
-  await loadScript('/essentia.js-core.js');
-  const wasm = await (window as unknown as { EssentiaWASM: () => Promise<any> }).EssentiaWASM();
-  _ess = new wasm.EssentiaJS(false);
-  _ess.arrayToVector = wasm.arrayToVector;
-  return _ess;
+  if (!_essLoadPromise) {
+    _essLoadPromise = (async () => {
+      await loadScript('/essentia-wasm.web.js');
+      await loadScript('/essentia.js-core.js');
+      const wasm = await resolveEssentiaWasmModule();
+      const ess = new wasm.EssentiaJS(false);
+      ess.arrayToVector = wasm.arrayToVector;
+      _ess = ess;
+      return ess;
+    })().catch((e) => {
+      _essLoadPromise = null;
+      _ess = null;
+      throw e;
+    });
+  }
+  return _essLoadPromise;
 }
 
 let featureWorker: Worker | null = null;
 let inferenceWorker: Worker | null = null;
-let workersReady: Promise<void> | null = null;
+/** In-flight worker bootstrap; cleared on failure so callers can retry. */
+let workersInitPromise: Promise<void> | null = null;
 
 let onFeatDone: ((f: any) => void) | null = null;
 let onFeatError: ((e: string) => void) | null = null;
 let onPredDone: ((r: Record<string, number>) => void) | null = null;
 let onPredError: ((e: string) => void) | null = null;
 
-export function initAudioWorkers(): Promise<void> {
-  if (workersReady) return workersReady;
-  workersReady = new Promise<void>((resolve, reject) => {
-    featureWorker = new Worker('/workers/featureWorker.js');
-    featureWorker.onmessage = ({ data }) => {
-      if (data.features) onFeatDone?.(data.features);
-      else if (data.error) onFeatError?.(data.error);
-    };
-    featureWorker.onerror = (e) => onFeatError?.(e.message);
+function terminateWorkers() {
+  try {
+    featureWorker?.terminate();
+  } catch {
+    /* ignore */
+  }
+  try {
+    inferenceWorker?.terminate();
+  } catch {
+    /* ignore */
+  }
+  featureWorker = null;
+  inferenceWorker = null;
+}
 
-    inferenceWorker = new Worker('/workers/inferenceWorker.js');
-    inferenceWorker.onmessage = ({ data }) => {
-      if (data.ready) resolve();
-      else if (data.predictions) onPredDone?.(data.predictions);
-      else if (data.error) onPredError?.(data.error);
-      else if (data.modelReady) console.info(`model ready: ${data.modelReady}`);
+const WORKER_INIT_TIMEOUT_MS = 240_000;
+
+export function initAudioWorkers(): Promise<void> {
+  if (workersInitPromise) return workersInitPromise;
+
+  workersInitPromise = new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const fail = (msg: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      workersInitPromise = null;
+      terminateWorkers();
+      reject(new Error(msg));
     };
-    inferenceWorker.onerror = (e) => {
-      reject(new Error(`inferenceWorker: ${e.message}`));
-      onPredError?.(e.message);
+    const ok = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve();
     };
-    inferenceWorker.postMessage({ init: true });
+
+    const timeoutId = setTimeout(() => {
+      fail(
+        `Worker init timed out after ${WORKER_INIT_TIMEOUT_MS / 1000}s. Check that /workers/, /models/, and WASM assets load (Network tab).`
+      );
+    }, WORKER_INIT_TIMEOUT_MS);
+
+    try {
+      featureWorker = new Worker('/workers/featureWorker.js');
+      featureWorker.onmessage = ({ data }) => {
+        if (data.features) onFeatDone?.(data.features);
+        else if (data.error) onFeatError?.(data.error);
+      };
+      featureWorker.onerror = (e) => fail(`featureWorker: ${e.message}`);
+
+      inferenceWorker = new Worker('/workers/inferenceWorker.js');
+      inferenceWorker.onmessage = ({ data }) => {
+        if (data.ready) {
+          ok();
+        } else if (data.predictions) {
+          onPredDone?.(data.predictions);
+        } else if (data.error) {
+          if (!settled) {
+            fail(String(data.error));
+          } else {
+            onPredError?.(data.error);
+          }
+        } else if (data.modelReady) {
+          console.info(`model ready: ${data.modelReady}`);
+        }
+      };
+      inferenceWorker.onerror = (e) => {
+        fail(`inferenceWorker: ${e.message}`);
+      };
+      inferenceWorker.postMessage({ init: true });
+    } catch (e) {
+      fail(e instanceof Error ? e.message : 'Failed to start workers');
+    }
   });
-  return workersReady;
+
+  return workersInitPromise;
 }
 
 function computeFeatures(audio: Float32Array): Promise<any> {

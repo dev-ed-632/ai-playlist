@@ -179,17 +179,62 @@ export async function POST(req: Request) {
   }
 
   try {
-    const sql = `
+    /** Upsert by partial unique index on external_track_id (avoids bulk CSV race on same id). */
+    const sqlWithExternal = `
+      INSERT INTO tracks (
+        track_name, artist_names, track_url, genre, bpm,
+        danceability, mood_happy, mood_sad, mood_relaxed,
+        aggressiveness, engagement, approachability, embedding,
+        external_track_id, release_name, label, musical_key, is_explicit
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      ON CONFLICT (external_track_id) WHERE (external_track_id IS NOT NULL)
+      DO UPDATE SET
+        track_name = EXCLUDED.track_name,
+        artist_names = EXCLUDED.artist_names,
+        track_url = EXCLUDED.track_url,
+        genre = EXCLUDED.genre,
+        bpm = EXCLUDED.bpm,
+        danceability = EXCLUDED.danceability,
+        mood_happy = EXCLUDED.mood_happy,
+        mood_sad = EXCLUDED.mood_sad,
+        mood_relaxed = EXCLUDED.mood_relaxed,
+        aggressiveness = EXCLUDED.aggressiveness,
+        engagement = EXCLUDED.engagement,
+        approachability = EXCLUDED.approachability,
+        embedding = EXCLUDED.embedding,
+        release_name = EXCLUDED.release_name,
+        label = EXCLUDED.label,
+        musical_key = EXCLUDED.musical_key,
+        is_explicit = EXCLUDED.is_explicit
+      RETURNING id, (xmax = 0) AS inserted
+    `;
+
+    const paramsWithExternal = [
+      track.track_name,
+      track.artist_names,
+      track.track_url,
+      track.genre,
+      track.bpm,
+      track.danceability,
+      track.mood_happy,
+      track.mood_sad,
+      track.mood_relaxed,
+      track.aggressiveness,
+      track.engagement,
+      track.approachability,
+      realVector,
+      track.external_track_id,
+      track.release_name,
+      track.label,
+      track.musical_key,
+      track.is_explicit,
+    ];
+
+    const sqlLegacy = `
       WITH existing AS (
         SELECT id FROM tracks
-        WHERE (
-          ($15::text IS NOT NULL AND external_track_id = $15)
-          OR (
-            $15::text IS NULL
-            AND track_name = $1
-            AND artist_names[1] = $2
-          )
-        )
+        WHERE track_name = $1 AND artist_names[1] = $2
         LIMIT 1
       ),
       updated AS (
@@ -231,7 +276,7 @@ export async function POST(req: Request) {
       SELECT * FROM inserted
     `;
 
-    const params = [
+    const paramsLegacy = [
       track.track_name,
       track.artist_names[0],
       track.genre,
@@ -253,7 +298,10 @@ export async function POST(req: Request) {
       track.is_explicit,
     ];
 
-    const result = await query(sql, params);
+    const result = await query(
+      track.external_track_id ? sqlWithExternal : sqlLegacy,
+      track.external_track_id ? paramsWithExternal : paramsLegacy
+    );
     const row = result.rows[0];
 
     return NextResponse.json({
