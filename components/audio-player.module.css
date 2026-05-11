@@ -269,6 +269,158 @@
   flex-shrink: 0;
 }
 
+/* ZipDJ recommend: wrapper disappears from layout until expanded */
+.zipdjRecommendShell {
+  display: contents;
+}
+
+.zipdjRecommendShellExpanded {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  width: 100%;
+  height: 50vh;
+  max-height: 50vh;
+  min-height: 0;
+  background: linear-gradient(180deg, rgba(7, 11, 20, 0.99), rgba(5, 8, 15, 0.99));
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  border-top: 1px solid rgba(113, 134, 212, 0.22);
+}
+
+.zipdjRecommendPlayerWrap {
+  display: contents;
+}
+
+.zipdjRecommendShellExpanded .zipdjRecommendPlayerWrap {
+  display: block;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 48%;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem 0;
+}
+
+.zipdjRecommendShellExpanded .zipdjRecommendPlayerWrap > article {
+  max-width: 100%;
+}
+
+.recommendPanel {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.recommendPanelHeader {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0 0.5rem;
+  border-bottom: 1px solid rgba(113, 134, 212, 0.12);
+  margin-bottom: 0.35rem;
+}
+
+.recommendPanelTitle {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(210, 220, 252, 0.55);
+  font-weight: 700;
+}
+
+.recommendTableWrap {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(113, 134, 212, 0.14);
+  background: rgba(9, 12, 22, 0.65);
+}
+
+.recommendTable {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.recommendTable th {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(210, 220, 252, 0.45);
+  border-bottom: 1px solid rgba(113, 134, 212, 0.12);
+  position: sticky;
+  top: 0;
+  background: rgba(9, 12, 22, 0.95);
+}
+
+.recommendTable td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(113, 134, 212, 0.08);
+  color: rgba(210, 220, 252, 0.82);
+  vertical-align: middle;
+}
+
+.recommendTable tr:last-child td {
+  border-bottom: none;
+}
+
+.recommendPlayLink {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(142, 162, 249, 0.95);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.recommendPlayLink:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.recommendBtnActive {
+  border-color: rgba(142, 162, 249, 0.45) !important;
+  background: rgba(91, 124, 255, 0.12) !important;
+}
+
+.playerCardDocked {
+  border-radius: 1rem 1rem 0 0;
+  margin-bottom: 0;
+}
+
+.spinIcon {
+  width: 1rem;
+  height: 1rem;
+  animation: zipdjSpin 0.85s linear infinite;
+}
+
+@keyframes zipdjSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 900px) {
   .header {
     flex-direction: column;

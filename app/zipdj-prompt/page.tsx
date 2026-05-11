@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Radio, Sparkles } from "lucide-react";
-import { AudioPlayer } from "@/components/audio-player";
+import { AudioPlayer, type ZipdjRecommendPick } from "@/components/audio-player";
 import type { ZipdjParsedPrompt } from "@/lib/types/zipdj-prompt";
 
 type WebGuessRow = {
@@ -41,6 +41,14 @@ export default function ZipdjPromptPage() {
     url: string;
     title: string;
     subtitle: string;
+    recommendContext: {
+      releaseName: string;
+      trackName: string | null;
+      artistsName: string | null;
+      labelName: string | null;
+      genre: string | null;
+      excludeTrackId: string;
+    };
   } | null>(null);
 
   async function runPrompt() {
@@ -275,6 +283,14 @@ export default function ZipdjPromptPage() {
                                   url: t.trackUrl!,
                                   title: t.releaseName,
                                   subtitle: t.trackName || "",
+                                  recommendContext: {
+                                    releaseName: t.releaseName,
+                                    trackName: t.trackName || null,
+                                    artistsName: t.artistsName,
+                                    labelName: t.labelName,
+                                    genre: t.genre,
+                                    excludeTrackId: t.trackId,
+                                  },
                                 })
                               }
                               className="text-xs font-bold uppercase tracking-wide text-primary hover:underline"
@@ -324,6 +340,23 @@ export default function ZipdjPromptPage() {
           trackUrl={playingUrl.url}
           className="fixed bottom-4 right-4 z-50 w-[min(100vw-2rem,380px)] shadow-2xl"
           onClose={() => setPlayingUrl(null)}
+          recommendContext={playingUrl.recommendContext}
+          onRecommendPick={(pick: ZipdjRecommendPick) => {
+            if (!pick.trackUrl) return;
+            setPlayingUrl({
+              url: pick.trackUrl,
+              title: pick.releaseName,
+              subtitle: pick.trackName || "",
+              recommendContext: {
+                releaseName: pick.releaseName,
+                trackName: pick.trackName || null,
+                artistsName: pick.artistsName,
+                labelName: pick.labelName,
+                genre: pick.genre,
+                excludeTrackId: pick.trackId,
+              },
+            });
+          }}
         />
       )}
     </div>

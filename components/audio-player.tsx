@@ -1,8 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { ExternalLink, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from "lucide-react";
+import {
+  ExternalLink,
+  Loader2,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  Sparkles,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 
 import { formatDuration } from "@/lib/client/format";
 import { ensureYouTubeIframeApi } from "@/lib/client/youtube-iframe-api";
@@ -10,6 +21,29 @@ import { waveformFetchUrl } from "@/lib/shared/audio-proxy";
 import { classifyTrackUrl, parseYouTubeVideoId } from "@/lib/shared/track-url";
 
 import styles from "./audio-player.module.css";
+
+/** ZipDJ catalog row context for “Recommend next” (optional). */
+export type ZipdjRecommendContext = {
+  releaseName: string;
+  trackName: string | null;
+  artistsName: string | null;
+  labelName: string | null;
+  genre?: string | null;
+  excludeTrackId: string;
+};
+
+/** Row from `/api/zipdj/now-playing-recommend` — use to start playing a suggestion. */
+export type ZipdjRecommendPick = {
+  trackId: string;
+  releaseName: string;
+  trackName: string;
+  trackUrl: string | null;
+  artistsName: string | null;
+  genre: string | null;
+  labelName: string | null;
+  trackCreatedDate: string | null;
+  releaseCreatedDate: string | null;
+};
 
 export type AudioPlayerProps = {
   title: string;
@@ -19,6 +53,9 @@ export type AudioPlayerProps = {
   className?: string;
   /** Dismiss the floating player (e.g. clear “now playing”). */
   onClose?: () => void;
+  recommendContext?: ZipdjRecommendContext;
+  /** Called when user plays a row from the recommend list. */
+  onRecommendPick?: (t: ZipdjRecommendPick) => void;
 };
 
 function formatClock(seconds: number) {
@@ -54,10 +91,19 @@ type YouTubePlaybackProps = {
   artist?: string;
   bpm?: number | null;
   onClose?: () => void;
+  recommendFooter?: ReactNode;
 };
 
 /** Thumbnail + scrubber like MP3; real playback via hidden IFrame API player. */
-function YouTubePlaybackInner({ youtubeId, trackUrl, title, artist, bpm, onClose }: YouTubePlaybackProps) {
+function YouTubePlaybackInner({
+  youtubeId,
+  trackUrl,
+  title,
+  artist,
+  bpm,
+  onClose,
+  recommendFooter,
+}: YouTubePlaybackProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayerInstance | null>(null);
   const [thumbSrc, setThumbSrc] = useState(`https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`);
@@ -305,6 +351,8 @@ function YouTubePlaybackInner({ youtubeId, trackUrl, title, artist, bpm, onClose
           </button>
         </div>
 
+        {recommendFooter}
+
         <button className={styles.control} type="button" onClick={toggleMute} disabled={controlsDisabled}>
           {isMuted ? <VolumeX className={styles.icon} /> : <Volume2 className={styles.icon} />}
           <span>{isMuted ? "Unmute" : "Mute"}</span>
@@ -324,6 +372,7 @@ type DirectAudioProps = {
   artist?: string;
   bpm?: number | null;
   onClose?: () => void;
+  recommendFooter?: ReactNode;
 };
 
 type DirectAudioInnerProps = {
@@ -333,10 +382,19 @@ type DirectAudioInnerProps = {
   artist?: string;
   bpm?: number | null;
   onClose?: () => void;
+  recommendFooter?: ReactNode;
 };
 
 /** Remounted via parent `key` so initial state resets without effect setState. */
-function DirectAudioPlaybackInner({ playUrl, trackUrl, title, artist, bpm, onClose }: DirectAudioInnerProps) {
+function DirectAudioPlaybackInner({
+  playUrl,
+  trackUrl,
+  title,
+  artist,
+  bpm,
+  onClose,
+  recommendFooter,
+}: DirectAudioInnerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -516,6 +574,8 @@ function DirectAudioPlaybackInner({ playUrl, trackUrl, title, artist, bpm, onClo
           </button>
         </div>
 
+        {recommendFooter}
+
         <button className={styles.control} type="button" onClick={toggleMute} disabled={controlsDisabled}>
           {isMuted ? <VolumeX className={styles.icon} /> : <Volume2 className={styles.icon} />}
           <span>{isMuted ? "Unmute" : "Mute"}</span>
@@ -526,7 +586,14 @@ function DirectAudioPlaybackInner({ playUrl, trackUrl, title, artist, bpm, onClo
 }
 
 /** Native audio + proxy URL; wrapper sets `key` so track switches remount clean state. */
-function DirectAudioPlayback({ trackUrl, title, artist, bpm, onClose }: DirectAudioProps) {
+function DirectAudioPlayback({
+  trackUrl,
+  title,
+  artist,
+  bpm,
+  onClose,
+  recommendFooter,
+}: DirectAudioProps) {
   const playUrl = waveformFetchUrl(trackUrl);
   return (
     <DirectAudioPlaybackInner
@@ -537,13 +604,251 @@ function DirectAudioPlayback({ trackUrl, title, artist, bpm, onClose }: DirectAu
       artist={artist}
       bpm={bpm}
       onClose={onClose}
+      recommendFooter={recommendFooter}
     />
   );
 }
 
-export function AudioPlayer({ title, artist, bpm, trackUrl, className, onClose }: AudioPlayerProps) {
+function ZipdjRecommendHost({
+  recommendContext,
+  onRecommendPick,
+  floatingClassName,
+  renderPlayer,
+}: {
+  recommendContext: ZipdjRecommendContext;
+  onRecommendPick?: (t: ZipdjRecommendPick) => void;
+  floatingClassName?: string;
+  renderPlayer: (recommendFooter: ReactNode) => ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [tracks, setTracks] = useState<ZipdjRecommendPick[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setExpanded(false);
+    setTracks([]);
+    setError(null);
+    setInfo(null);
+  }, [recommendContext.excludeTrackId]);
+
+  const fetchRecommendations = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await fetch("/api/zipdj/now-playing-recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          releaseName: recommendContext.releaseName,
+          trackName: recommendContext.trackName ?? "",
+          artistsName: recommendContext.artistsName ?? "",
+          labelName: recommendContext.labelName ?? "",
+          genre: recommendContext.genre ?? "",
+          excludeTrackId: recommendContext.excludeTrackId,
+        }),
+      });
+      const data = (await res.json()) as {
+        tracks?: ZipdjRecommendPick[];
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      setTracks(Array.isArray(data.tracks) ? data.tracks : []);
+      if (data.message?.trim()) setInfo(data.message.trim());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load suggestions");
+      setTracks([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [recommendContext]);
+
+  function onRecommendClick() {
+    setExpanded((prev) => {
+      if (!prev) void fetchRecommendations();
+      return !prev;
+    });
+  }
+
+  const footer = (
+    <button
+      type="button"
+      className={clsx(styles.control, expanded && styles.recommendBtnActive)}
+      onClick={onRecommendClick}
+      aria-expanded={expanded}
+    >
+      <Sparkles className={styles.icon} />
+      <span>{expanded ? "Hide" : "Recommend"}</span>
+    </button>
+  );
+
+  return (
+    <div
+      className={clsx(styles.zipdjRecommendShell, expanded && styles.zipdjRecommendShellExpanded)}
+    >
+      <div className={styles.zipdjRecommendPlayerWrap}>
+        <article
+          className={clsx(
+            styles.playerCard,
+            !expanded && floatingClassName,
+            expanded && styles.playerCardDocked
+          )}
+        >
+          {renderPlayer(footer)}
+        </article>
+      </div>
+      {expanded ? (
+        <div className={styles.recommendPanel}>
+          <div className={styles.recommendPanelHeader}>
+            <p className={styles.recommendPanelTitle}>Suggested next</p>
+            {loading ? (
+              <span className={styles.timingMuted} aria-hidden>
+                <Loader2 className={styles.spinIcon} />
+              </span>
+            ) : null}
+          </div>
+          {error ? <p className={styles.loadError}>{error}</p> : null}
+          {info && !error ? <p className={styles.progressHint}>{info}</p> : null}
+          <div className={styles.recommendTableWrap}>
+            <table className={styles.recommendTable}>
+              <thead>
+                <tr>
+                  <th>Play</th>
+                  <th>Release (track)</th>
+                  <th>Artists</th>
+                  <th>Label</th>
+                  <th>Genre</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!loading && tracks.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className={styles.timingMuted} style={{ padding: "0.85rem" }}>
+                      No suggestions yet.
+                    </td>
+                  </tr>
+                ) : null}
+                {tracks.map((t) => {
+                  const releaseTrack =
+                    t.trackName?.trim() !== "" ? `${t.releaseName} (${t.trackName})` : t.releaseName;
+                  return (
+                    <tr key={t.trackId}>
+                      <td>
+                        {t.trackUrl ? (
+                          <button
+                            type="button"
+                            className={styles.recommendPlayLink}
+                            onClick={() => onRecommendPick?.(t)}
+                          >
+                            Play
+                          </button>
+                        ) : (
+                          <span className={styles.timingMuted}>—</span>
+                        )}
+                      </td>
+                      <td>{releaseTrack}</td>
+                      <td>{t.artistsName || "—"}</td>
+                      <td>{t.labelName || "—"}</td>
+                      <td>{t.genre || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function AudioPlayer({
+  title,
+  artist,
+  bpm,
+  trackUrl,
+  className,
+  onClose,
+  recommendContext,
+  onRecommendPick,
+}: AudioPlayerProps) {
   const youtubeId = parseYouTubeVideoId(trackUrl);
   const kind = youtubeId ? "youtube" : classifyTrackUrl(trackUrl);
+
+  if (recommendContext) {
+    return (
+      <ZipdjRecommendHost
+        recommendContext={recommendContext}
+        onRecommendPick={onRecommendPick}
+        floatingClassName={className}
+        renderPlayer={(footer) => {
+          if (kind === "youtube" && youtubeId) {
+            const ytHref = trackUrl ?? `https://www.youtube.com/watch?v=${youtubeId}`;
+            return (
+              <YouTubePlayback
+                youtubeId={youtubeId}
+                trackUrl={ytHref}
+                title={title}
+                artist={artist}
+                bpm={bpm}
+                onClose={onClose}
+                recommendFooter={footer}
+              />
+            );
+          }
+          if (kind === "audio" && trackUrl?.trim()) {
+            return (
+              <DirectAudioPlayback
+                trackUrl={trackUrl.trim()}
+                title={title}
+                artist={artist}
+                bpm={bpm}
+                onClose={onClose}
+                recommendFooter={footer}
+              />
+            );
+          }
+          return (
+            <>
+              <div className={styles.header}>
+                <div className={styles.trackBlock}>
+                  <p className={styles.eyebrow}>Playback</p>
+                  <p className={styles.trackName}>{title}</p>
+                  {artist ? <p className={styles.artistLine}>{artist}</p> : null}
+                  <div className={styles.metaInline}>
+                    <span>No preview</span>
+                    {bpm != null && bpm > 0 ? <span>{bpm} BPM</span> : null}
+                  </div>
+                </div>
+                <div className={styles.headerAside}>
+                  {onClose ? (
+                    <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close player">
+                      <X className={styles.icon} />
+                    </button>
+                  ) : null}
+                  <p className={styles.timing}>
+                    <span className={styles.timingMuted}>—</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.wave}>
+                <p className={styles.noPreview}>No preview URL for this track.</p>
+              </div>
+
+              <div className={styles.controls}>
+                <div className={styles.transportGroup} />
+                {footer}
+              </div>
+            </>
+          );
+        }}
+      />
+    );
+  }
 
   if (kind === "youtube" && youtubeId) {
     const ytHref = trackUrl ?? `https://www.youtube.com/watch?v=${youtubeId}`;

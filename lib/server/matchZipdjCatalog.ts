@@ -159,6 +159,31 @@ export async function vectorSearchZipdj(
   return rows as (ZipdjRow & { vec_dist: number })[];
 }
 
+/** Like `vectorSearchZipdj` but omits one catalog id (e.g. now-playing). */
+export async function vectorSearchZipdjExcluding(
+  vectorLiteral: string,
+  limit: number,
+  excludeTrackId: string | null
+): Promise<(ZipdjRow & { vec_dist: number })[]> {
+  const ex = excludeTrackId?.trim();
+  if (!ex) {
+    return vectorSearchZipdj(vectorLiteral, limit);
+  }
+  const sql = `
+    SELECT track_id, track_name, track_url, release_name, release_id,
+           label_name, label_id, artists_name, genre, tags,
+           track_created_date::text AS track_created_date,
+           release_created_date::text AS release_created_date,
+           (embedding <=> $1::vector) AS vec_dist
+    FROM zipdj_tracks_ai
+    WHERE track_id <> $2::text
+    ORDER BY embedding <=> $1::vector
+    LIMIT $3
+  `;
+  const { rows } = await query(sql, [vectorLiteral, ex, limit]);
+  return rows as (ZipdjRow & { vec_dist: number })[];
+}
+
 /** Optional ILIKE / date bounds on `zipdj_tracks_ai` (release date filter). */
 export type ZipdjCatalogFilters = {
   artist: string | null;
