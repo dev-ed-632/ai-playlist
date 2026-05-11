@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+training_data/
+
+# Drizzle Kit — tracked: drizzle/schema.ts, drizzle/relations.ts; regenerate via npm run db:introspect
+drizzle/meta/
+drizzle/*.sql

@@ -233,6 +233,12 @@ export default function UploadPage() {
           >
             Bulk CSV ingest
           </Link>
+          <Link
+            href="/creator/bulk-zipdj-csv"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Bulk ZipDJ CSV
+          </Link>
         </header>
 
         <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">

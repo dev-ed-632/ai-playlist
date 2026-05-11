@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search, UploadCloud, Sparkles, Radio, ListMusic, MessageSquareText } from "lucide-react";
+import { Search, UploadCloud, Sparkles, Radio, ListMusic, MessageSquareText, FileSpreadsheet } from "lucide-react";
 import { APP_CONFIG } from "@/config/app-theme";
 
 export default function Home() {
@@ -38,6 +38,13 @@ export default function Home() {
               >
                 <MessageSquareText className="h-4 w-4" />
                 Prompt playlist
+              </Link>
+              <Link
+                href="/zipdj-prompt"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:border-primary/50 hover:text-white"
+              >
+                <MessageSquareText className="h-4 w-4" />
+                ZipDJ prompt
               </Link>
               <Link
                 href="/create-playlist"
@@ -209,6 +216,17 @@ export default function Home() {
             <h2 className="text-xl font-bold">Song Ingestion</h2>
             <p className="mt-2 text-sm text-slate-300">
               Extract features and insert embeddings — or use bulk CSV with URLs.
+            </p>
+          </Link>
+
+          <Link
+            href="/creator/bulk-zipdj-csv"
+            className="group rounded-2xl border border-slate-700/70 bg-slate-900/60 p-6 transition hover:-translate-y-0.5 hover:border-primary/45"
+          >
+            <FileSpreadsheet className="mb-4 h-6 w-6 text-primary" />
+            <h2 className="text-xl font-bold">Bulk ZipDJ CSV</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Ingest ZipDJ metadata and embeddings into zipdj_tracks_ai (no audio decode).
             </p>
           </Link>
         </section>

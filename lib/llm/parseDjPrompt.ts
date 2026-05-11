@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { normalizeParsedFilters, type DjParsedFilters } from '@/lib/llm/dj-filters';
+import { openAiTemperatureOptions } from '@/lib/llm/openaiTemperature';
 
 const MODEL = process.env.OPENAI_PROMPT_MODEL || 'gpt-4o-mini';
 
@@ -30,7 +31,7 @@ export async function parseDjPrompt(userPrompt: string): Promise<DjParsedFilters
 
   const completion = await openai.chat.completions.create({
     model: MODEL,
-    temperature: 0.3,
+    ...openAiTemperatureOptions(0.3),
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: SYSTEM },
