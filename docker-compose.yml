@@ -1,0 +1,24 @@
+# Local Postgres with pgvector (required for embedding columns + HNSW indexes).
+# First run only: loads ./schema.sql via /docker-entrypoint-initdb.d when data volume is empty.
+#
+# If port 5433 is already used (e.g. old postgres:18 image), stop that container first:
+#   docker stop my-postgres
+# Then: npm run db:docker:up
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: zipdj-ai-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: zipdj_ai
+    # PG 18+ images store data under a versioned path; mount the parent dir (see postgres Docker README).
+    volumes:
+      - zipdj_pgdata:/var/lib/postgresql
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+volumes:
+  zipdj_pgdata:

@@ -17,6 +17,8 @@ App runs on **port 3022** by default (`package.json`).
 
 ## Database
 
+**Local Docker + pgvector** and **server requirements**: [docs/POSTGRES_AND_PGVECTOR.md](docs/POSTGRES_AND_PGVECTOR.md) (`npm run db:docker:up`, `npm run db:studio`).
+
 PostgreSQL with the **`vector`** extension. All catalog data lives in **`tracks`**. Similarity uses **cosine-style** distance (`embedding <-> query`) with an **HNSW** index for fast approximate nearest-neighbor search.
 
 ### Entity relationship (Mermaid)

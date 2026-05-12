@@ -13,7 +13,11 @@
     "pm2:logs": "pm2 logs zipdj",
     "lint": "eslint",
     "db:introspect": "drizzle-kit introspect && node scripts/fix-drizzle-after-introspect.mjs",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:docker:up": "docker compose up -d",
+    "db:docker:down": "docker compose down -v",
+    "db:docker:logs": "docker compose logs -f postgres",
+    "db:apply-schema": "docker compose exec -T postgres psql -U postgres -d zipdj_ai -v ON_ERROR_STOP=1 < schema.sql"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.63",
